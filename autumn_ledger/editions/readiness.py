@@ -35,6 +35,10 @@ class PublicationReadiness:
         integrity = edition["result"]["integrity"]["ok"] and edition["result"]["statistical_checks"]["ok"]
         checks.append({"code": "integrity", "ok": integrity, "message": "统计分区与证据一致性检查",
                        "evidence": {"checks": edition["result"]["statistical_checks"]["check_count"]}})
+        withdrawn = edition["withdrawal"]["affected"]
+        checks.append({"code": "withdrawn_data", "ok": not withdrawn,
+                       "message": "不含已撤回授权的数据" if not withdrawn else "包含已撤回授权的数据，需要替代版本",
+                       "evidence": edition["withdrawal"]})
         return {"edition_id": identity, "can_publish": all(item["ok"] for item in checks),
                 "expected_version": edition["version"], "channel": pointer,
                 "checks": checks, "blockers": [item["code"] for item in checks if not item["ok"]],
@@ -45,12 +49,15 @@ class PublicationReadiness:
         with self.database.transaction() as connection:
             rows = connection.execute("SELECT id,state,data_revision,version,result FROM editions ORDER BY created_at,id").fetchall()
             current = self.database.revision(connection)
+            impacted = {row["edition_id"] for row in connection.execute(
+                "SELECT DISTINCT edition_id FROM withdrawal_impacts").fetchall()}
         import json
         groups = {"awaiting_review": [], "ready_to_publish": [], "quality_blocked": [], "stale": [], "closed": []}
         for row in rows:
             quality = json.loads(row["result"])["quality"]
             item = {"id": row["id"], "state": row["state"], "version": row["version"],
-                    "data_revision": row["data_revision"], "quality_errors": quality["errors"]}
+                    "data_revision": row["data_revision"], "quality_errors": quality["errors"],
+                    "withdrawn": row["id"] in impacted}
             if row["state"] in {"rejected", "retired"}:
                 group = "closed"
             elif row["data_revision"] != current:
@@ -76,7 +83,9 @@ class PublicationReadiness:
                                              (channel["name"], channel["generation"])).fetchone()
                 matches = history is not None and history["edition_id"] == channel["edition_id"]
                 state_valid = edition["state"] == "published"
+                withdrawn = edition["withdrawal"]["affected"]
                 rows.append({"channel": channel["name"], "edition_id": channel["edition_id"],
                              "generation": channel["generation"], "history_matches": matches,
-                             "state_valid": state_valid, "stale": edition["stale"], "ok": matches and state_valid})
+                             "state_valid": state_valid, "stale": edition["stale"],
+                             "withdrawn": withdrawn, "ok": matches and state_valid and not withdrawn})
         return {"ok": all(row["ok"] for row in rows), "channels": rows}

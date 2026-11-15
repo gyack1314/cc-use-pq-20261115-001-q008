@@ -24,6 +24,9 @@ class Receipts:
                 "SELECT * FROM events WHERE source=? AND revision<=? ORDER BY order_id,sequence", (source, revision)
             ).fetchall()
             heads = self.intake.heads(revision, [source], connection)
+            withdrawn = {row["order_id"]: row["withdrawal_id"] for row in connection.execute(
+                "SELECT order_id, withdrawal_id FROM withdrawal_orders WHERE source=? AND revision<=?",
+                (source, revision)).fetchall()}
         batches = [dict(row) for row in batches]
         grouped = defaultdict(list)
         failures = []
@@ -56,14 +59,16 @@ class Receipts:
             orders.append({"order_id": order_id, "events": len(history), "head_sequence": head["sequence"],
                            "head_event_id": head["event_id"], "head_revision": head["revision"],
                            "state": head["state"], "sequence_gaps": gaps,
+                           "withdrawal": withdrawn.get(order_id),
                            "first_received_revision": min(row["revision"] for row in history),
                            "last_received_revision": max(row["revision"] for row in history)})
         return {"source": reference, "revision": revision, "ok": not failures, "failures": failures,
                 "batches": batches, "batch_count": len(batches), "events": len(events),
                 "accepted": sum(row["accepted"] for row in batches),
                 "duplicate_receipts": sum(row["duplicates"] for row in batches),
-                "heads": len(heads), "orders": orders,
-                "note": "序号可以跳跃；缺号只提示上游传输范围，不认定漏收或自动补造事件"}
+                "heads": len(heads), "orders": orders, "withdrawn_orders": len(withdrawn),
+                "note": "序号可以跳跃；缺号只提示上游传输范围，不认定漏收或自动补造事件；"
+                        "撤回订单的事件保留用于对账，但不参与统计"}
 
     def contributions(self, source, order_id):
         history = self.intake.history(source, order_id)

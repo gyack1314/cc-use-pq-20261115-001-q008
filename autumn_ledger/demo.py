@@ -81,7 +81,39 @@ def run_demo():
             replacement = client.post("/editions", json={"request_key": "demo-2", "request": request_data()}).json()
             assert replacement["summary"]["net_cents"] == 110000
             assert ledger.database.integrity()["ok"]
+            # 数据使用撤回：来源撤回 a2 的授权，公开频道立即暂停，替代版本审核后恢复
+            withdrawal = client.post("/sources/alpha/withdrawals", json={
+                "request_key": "wd-demo", "reason": "来源撤回 a2 的数据使用授权",
+                "order_ids": ["a2"], "actor": "compliance"})
+            assert withdrawal.status_code == 200, withdrawal.text
+            record = withdrawal.json()
+            assert record["state"] == "completed", record
+            assert record["progress"]["replaced"] == 1
+            assert record["progress"]["skipped"] == 1  # 未过审的草稿不自动生成替代
+            blocked = client.get("/public/weekly")
+            assert blocked.status_code == 410
+            assert blocked.json()["error"]["code"] == "withdrawn_data"
+            impact = client.get(f"/withdrawals/{record['id']}/impact").json()
+            assert impact["channels"][0]["status"] == "suspended"
+            replaced = next(row for row in impact["editions"] if row["replacement"])
+            replacement_id = replaced["replacement"]["id"]
+            totals = ledger.editions.get(replacement_id)["result"]["periods"]["current"]["cube"]["totals"]
+            assert totals["orders"] == 2 and totals["net_cents"] == 60000
+            approve = client.post(f"/editions/{replacement_id}/decision", json={
+                "action": "approve", "expected_version": 1, "actor": "analyst",
+                "note": "替代版本已排除撤回订单，总量与质量重算一致"})
+            assert approve.status_code == 200, approve.text
+            restored = client.post(f"/editions/{replacement_id}/publish", json={
+                "channel": "weekly", "expected_version": 2, "expected_generation": 1, "actor": "publisher"})
+            assert restored.status_code == 200, restored.text
+            current = client.get("/public/weekly").json()
+            assert current["result"]["periods"]["current"]["cube"]["totals"]["orders"] == 2
+            impact = client.get(f"/withdrawals/{record['id']}/impact").json()
+            assert impact["channels"][0]["status"] == "restored"
+            assert ledger.database.integrity()["ok"]
             return {"ok": True, "orders": 3, "original_net_cents": 120000, "corrected_net_cents": 110000,
                     "stale_publish_blocked": True, "old_snapshot_reproduced": True,
                     "bundle_verified": True, "revision_before_correction": revision,
+                    "withdrawal": {"id": record["id"], "orders_excluded": 1,
+                                   "replacement_orders": 2, "channel_restored": True},
                     "final_revision": ledger.database.revision()}

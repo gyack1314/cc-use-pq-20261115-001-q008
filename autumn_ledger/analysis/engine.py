@@ -1,3 +1,5 @@
+from collections import Counter
+
 from ..errors import require
 from ..values import fingerprint, utc_now
 from .comparison import comparable_coverage, compare_periods
@@ -12,12 +14,13 @@ from .invariants import inspect_result
 
 
 class AnalysisEngine:
-    def __init__(self, database, catalog, calendars, coverage, intake):
+    def __init__(self, database, catalog, calendars, coverage, intake, withdrawals):
         self.database = database
         self.catalog = catalog
         self.calendars = calendars
         self.coverage = coverage
         self.intake = intake
+        self.withdrawals = withdrawals
 
     def run(self, value, connection=None):
         request = normalize_request(value)
@@ -27,20 +30,37 @@ class AnalysisEngine:
         revision = self.database.snapshot_revision(connection, request.get("revision"))
         references = self.validate_references(request, revision, connection)
         heads = self.intake.heads(revision, request["sources"], connection)
+        withdrawn = self.withdrawals.pairs_at(revision, connection)
+        excluded_heads = [order for order in heads if (order["source"], order["order_id"]) in withdrawn]
+        if excluded_heads:
+            heads = [order for order in heads if (order["source"], order["order_id"]) not in withdrawn]
         windows = request_windows(request)
         periods = {}
         lineage = []
         for name, window in windows.items():
             selected = [order for order in heads if match_order(order, request, window)]
+            excluded = [order for order in excluded_heads if match_order(order, request, window)]
             exposure = self.calendars.exposure(request["cities"], window.start, window.end, revision, connection)
             grid = daily_grid(window, request["cities"], exposure)
             matrix = self.coverage.matrix(request["sources"], request["cities"],
                                           window.start, window.end, revision, connection)
+            counts = Counter((order["source"], order["origin"], order["travel_day"]) for order in excluded)
+            if counts:
+                for cell in matrix:
+                    flagged = counts.get((cell["source"], cell["city"], cell["day"]))
+                    if flagged:
+                        cell["withdrawn_orders"] = flagged
             cube = build_cubes(selected, window, request["cities"], grid)
             periods[name] = {"window": window.as_dict(), "orders": selected, "exposure": grid,
                              "exposure_summary": exposure_summary(grid), "coverage": matrix,
                              "coverage_summary": self.coverage.summary(matrix),
                              "coverage_gaps": self.coverage.missing_groups(matrix), "cube": cube}
+            if counts:
+                periods[name]["withdrawn"] = {
+                    "excluded_orders": len(excluded),
+                    "orders": sorted(f"{order['source']}:{order['order_id']}" for order in excluded)[:100],
+                    "cells": [{"source": source, "city": city, "day": day}
+                              for source, city, day in sorted(counts)][:100]}
             period = periods[name]
             period["profiles"] = {dimension: profile_period(period, references, dimension)
                                   for dimension in ("origin", "destination", "source")}
@@ -93,6 +113,7 @@ class AnalysisEngine:
                 "refund": "refund_cents为订单累计退款，不是本次退款增量",
                 "coverage": "complete表示来源确认该城市日期数据已齐，未登记不能当零",
                 "denominator": "日均按选定城市日期暴露计，不按有订单的日期计",
+                "withdrawn": "来源撤回数据使用授权的订单不参与统计，其日期不能解释为零需求",
                 "scope": "仅描述所选来源订单，不推断总体或因果效应"}
 
     def preview(self, value):

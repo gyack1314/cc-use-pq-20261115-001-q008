@@ -3,9 +3,10 @@ from ..values import identifier, integer, text, utc_now
 
 
 class Review:
-    def __init__(self, database, editions):
+    def __init__(self, database, editions, withdrawals):
         self.database = database
         self.editions = editions
+        self.withdrawals = withdrawals
 
     def check_version(self, edition, expected_version):
         integer(expected_version, "expected_version", 1)
@@ -26,6 +27,7 @@ class Review:
             self.check_version(edition, expected_version)
             if action == "approve":
                 require(edition["state"] == "draft", "invalid_transition", "仅草稿可以审核通过", 409)
+                self.withdrawals.require_clean(identity, connection, "审核通过")
                 self.check_current(edition)
                 require(edition["result"]["quality"]["publishable"], "quality_blocked", "质量检查阻止审核通过", 409,
                         edition["result"]["quality"])
@@ -57,6 +59,7 @@ class Review:
             if generation != expected_generation:
                 raise conflict("发布频道已被更新", {"current_generation": generation})
             require(edition["state"] in {"approved", "published"}, "not_approved", "分析尚未审核通过", 409)
+            self.withdrawals.require_clean(identity, connection, "发布")
             self.check_current(edition)
             require(edition["result"]["quality"]["publishable"], "quality_blocked", "质量检查未通过", 409)
             if current and current["edition_id"] == identity:
@@ -98,12 +101,17 @@ class Review:
             if row is None:
                 raise missing("发布频道", name)
             edition = self.editions.get(row["edition_id"], connection, False)
-            return {**dict(row), "edition": edition}
+            return {**dict(row), "edition": edition, "suspended": edition["withdrawal"]["affected"]}
 
     def channels(self):
         with self.database.transaction() as connection:
             rows = connection.execute("SELECT * FROM channels ORDER BY name").fetchall()
-            return [{**dict(row), "stale": self.editions.get(row["edition_id"], connection, False)["stale"]} for row in rows]
+            result = []
+            for row in rows:
+                edition = self.editions.get(row["edition_id"], connection, False)
+                result.append({**dict(row), "stale": edition["stale"],
+                               "suspended": edition["withdrawal"]["affected"]})
+            return result
 
     def history(self, identity):
         self.editions.get(identity, include_result=False)

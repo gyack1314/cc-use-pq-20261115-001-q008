@@ -89,6 +89,7 @@ class Database:
             count = connection.execute("SELECT COUNT(*) FROM audit").fetchone()[0]
             event_count = connection.execute("SELECT COUNT(*) FROM events").fetchone()[0]
             edition_count = connection.execute("SELECT COUNT(*) FROM editions").fetchone()[0]
+            withdrawal_count = connection.execute("SELECT COUNT(*) FROM withdrawals").fetchone()[0]
         ok = [row[0] for row in integrity] == ["ok"] and not foreign and count == revision
         return {"ok": ok, "revision": revision, "audit_entries": count,
-                "events": event_count, "editions": edition_count}
+                "events": event_count, "editions": edition_count, "withdrawals": withdrawal_count}

@@ -58,7 +58,8 @@ class EditionQuery:
                              "top_destinations": cube["destination_ranking"][:5]}
         return {"edition_id": identity, "name": edition["name"], "state": edition["state"],
                 "version": edition["version"], "data_revision": edition["data_revision"],
-                "stale": edition["stale"], "periods": periods, "quality": edition["result"]["quality"],
+                "stale": edition["stale"], "withdrawal": edition["withdrawal"],
+                "periods": periods, "quality": edition["result"]["quality"],
                 "comparison": edition["result"]["comparison"], "result_digest": edition["result_digest"]}
 
     def coverage_filter(self, identity, period="current", status=None, source=None, city=None, limit=100, offset=0):

@@ -82,6 +82,15 @@ def comparison_issues(comparison):
     return result
 
 
+def withdrawal_issues(period, name):
+    withdrawn = period.get("withdrawn")
+    if not withdrawn:
+        return []
+    return [issue("withdrawn_excluded", "warning",
+                  "部分订单因来源撤回数据使用授权被排除，对应日期不能解释为零需求",
+                  {"period": name, "orders": withdrawn["excluded_orders"], "cells": withdrawn["cells"]})]
+
+
 def summarize(issues):
     counts = Counter(item["severity"] for item in issues)
     return {"publishable": counts["error"] == 0, "errors": counts["error"],
@@ -95,6 +104,7 @@ def quality_report(periods, request, comparison):
         issues += volume_issues(period["cube"], request["minimum_orders"], name)
         issues += calendar_issues(period["exposure"], request["cities"], name)
         issues += record_issues(period["orders"], period["coverage"], name)
+        issues += withdrawal_issues(period, name)
     issues += comparison_issues(comparison)
     issues.append(issue("observational_sample", "info", "结果仅描述所选来源已收到的订单，不作总体或政策因果推断"))
     return summarize(issues)

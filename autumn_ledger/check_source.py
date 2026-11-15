@@ -15,6 +15,7 @@ def check():
         specification = app.openapi()
         assert specification["paths"]
         assert "/editions/{identity}/publish" in specification["paths"]
+        assert "/sources/{source}/withdrawals" in specification["paths"]
     print(f"语法与接口模式检查通过：{len(files)}个Python文件")
 
 

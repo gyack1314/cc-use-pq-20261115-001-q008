@@ -9,7 +9,7 @@ from ..analysis.narrative import explain_result
 from ..analysis.trends import robust_flags
 from .models import (CatalogWrite, CalendarWrite, CoverageWrite, EventBatch, FileBatch, FileInspect,
                      AnalysisRequest, EditionRequest, DecisionRequest, PublishRequest, RetireRequest,
-                     EditionComparison, ProfileRequest, AnomalyRequest)
+                     EditionComparison, ProfileRequest, AnomalyRequest, WithdrawalRequest)
 
 
 def request_value(value):
@@ -249,6 +249,28 @@ def create_app(path=None):
     @app.get("/sources/{source}/snapshot-difference")
     def source_difference(source: str, before: int, after: int):
         return ledger.receipts.between_snapshots(source, before, after)
+
+    @app.post("/sources/{source}/withdrawals")
+    def commit_withdrawal(source: str, body: WithdrawalRequest):
+        return ledger.withdrawals.commit(source, body.request_key, body.reason, body.actor,
+                                         body.order_ids, body.batch_ids)
+
+    @app.get("/withdrawals")
+    def list_withdrawals(source: str | None = None, state: str | None = None,
+                         limit: int = 100, offset: int = 0):
+        return ledger.withdrawals.list(source, state, limit, offset)
+
+    @app.get("/withdrawals/{identity}")
+    def get_withdrawal(identity: str):
+        return ledger.withdrawals.get(identity)
+
+    @app.get("/withdrawals/{identity}/impact")
+    def withdrawal_impact(identity: str):
+        return ledger.withdrawals.impact(identity)
+
+    @app.post("/withdrawals/{identity}/process")
+    def process_withdrawal(identity: str):
+        return ledger.withdrawals.process(identity)
 
     @app.get("/analysis-readiness")
     def readiness(start: str, end: str, city: list[str] = Query(), source: list[str] = Query(),

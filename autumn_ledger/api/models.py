@@ -80,6 +80,14 @@ class RetireRequest(StrictModel):
     note: StrictStr
 
 
+class WithdrawalRequest(StrictModel):
+    request_key: StrictStr
+    reason: StrictStr
+    order_ids: list[StrictStr] = Field(default_factory=list)
+    batch_ids: list[StrictStr] = Field(default_factory=list)
+    actor: StrictStr = "operator"
+
+
 class EditionComparison(StrictModel):
     left: StrictStr
     right: StrictStr

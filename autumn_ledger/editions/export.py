@@ -35,15 +35,17 @@ def encode_csv(headers, rows):
 
 
 class Export:
-    def __init__(self, editions, review):
+    def __init__(self, editions, review, withdrawals):
         self.editions = editions
         self.review = review
+        self.withdrawals = withdrawals
 
     def edition(self, identity, published_only=False):
         edition = self.editions.get(identity)
         if published_only:
             require(edition["state"] == "published", "not_published", "该版本未发布", 409)
         require(edition["state"] != "retired", "retired", "该版本已撤下", 410)
+        self.withdrawals.require_servable(identity)
         return edition
 
     def document(self, identity, published_only=False):

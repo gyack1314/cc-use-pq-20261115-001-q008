@@ -19,6 +19,12 @@ STATEMENTS = (
     "CREATE TABLE IF NOT EXISTS decisions (id INTEGER PRIMARY KEY AUTOINCREMENT, edition_id TEXT NOT NULL REFERENCES editions(id), edition_version INTEGER NOT NULL, action TEXT NOT NULL, actor TEXT NOT NULL, note TEXT NOT NULL, created_at TEXT NOT NULL)",
     "CREATE TABLE IF NOT EXISTS channels (name TEXT PRIMARY KEY, edition_id TEXT NOT NULL REFERENCES editions(id), generation INTEGER NOT NULL)",
     "CREATE TABLE IF NOT EXISTS publication_history (id INTEGER PRIMARY KEY AUTOINCREMENT, channel TEXT NOT NULL, generation INTEGER NOT NULL, edition_id TEXT NOT NULL REFERENCES editions(id), actor TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(channel,generation))",
+    "CREATE TABLE IF NOT EXISTS withdrawals (id TEXT PRIMARY KEY, request_key TEXT NOT NULL UNIQUE, source TEXT NOT NULL, reason TEXT NOT NULL, actor TEXT NOT NULL, scope TEXT NOT NULL, scope_digest TEXT NOT NULL, orders_summary TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('processing','completed')), revision INTEGER NOT NULL, last_error TEXT, created_at TEXT NOT NULL, completed_at TEXT)",
+    "CREATE TABLE IF NOT EXISTS withdrawal_orders (source TEXT NOT NULL, order_id TEXT NOT NULL, withdrawal_id TEXT NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY(source,order_id))",
+    "CREATE INDEX IF NOT EXISTS withdrawal_order_revision ON withdrawal_orders(revision,source,order_id)",
+    "CREATE TABLE IF NOT EXISTS withdrawal_impacts (withdrawal_id TEXT NOT NULL, edition_id TEXT NOT NULL, data_revision INTEGER NOT NULL, state TEXT NOT NULL CHECK(state IN ('pending','replaced','skipped')), replacement_id TEXT, created_at TEXT NOT NULL, PRIMARY KEY(withdrawal_id,edition_id))",
+    "CREATE INDEX IF NOT EXISTS withdrawal_impact_edition ON withdrawal_impacts(edition_id)",
+    "CREATE TABLE IF NOT EXISTS withdrawal_replacements (edition_id TEXT PRIMARY KEY, replacement_id TEXT NOT NULL, withdrawal_id TEXT NOT NULL, revision INTEGER NOT NULL, created_at TEXT NOT NULL)",
 )
 
 

@@ -7,9 +7,10 @@ from ..analysis.windows import normalize_request
 
 
 class Editions:
-    def __init__(self, database, engine):
+    def __init__(self, database, engine, withdrawals):
         self.database = database
         self.engine = engine
+        self.withdrawals = withdrawals
 
     def create(self, request_key, request):
         identifier(request_key, "request_key")
@@ -22,6 +23,12 @@ class Editions:
                     raise conflict("分析请求号已用于不同请求")
                 return self.decode(existing, include_result=False)
             result = self.engine.run(normalized, connection)
+            withdrawn = self.withdrawals.all_pairs(connection)
+            if withdrawn:
+                hits = sorted({(item["source"], item["order_id"]) for item in result["lineage"]} & withdrawn)
+                require(not hits, "withdrawn_contributions",
+                        "分析请求命中已撤回授权的订单，不能生成新的统计版本", 409,
+                        {"orders": [f"{source}:{order_id}" for source, order_id in hits[:50]]})
             identity = "ed-" + uuid.uuid4().hex
             result_digest = fingerprint(result)
             created = utc_now()
@@ -56,6 +63,7 @@ class Editions:
         result = self.decode(row, include_result)
         result["current_data_revision"] = self.database.revision(connection)
         result["stale"] = result["data_revision"] != result["current_data_revision"]
+        result["withdrawal"] = self.withdrawals.edition_status(identity, connection)
         return result
 
     def list(self, state=None, limit=100, offset=0):
@@ -74,6 +82,7 @@ class Editions:
             for row in rows:
                 item = self.decode(row, False)
                 item["stale"] = item["data_revision"] != current
+                item["withdrawal"] = self.withdrawals.edition_status(item["id"], connection)
                 result.append(item)
         return result
 
